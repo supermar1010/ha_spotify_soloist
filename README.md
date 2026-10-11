@@ -32,8 +32,8 @@ Spotify app ──Connect──▶ Soloist (add-on) ──audio──▶ HA host
   32-bit ARM is not supported: Home Assistant dropped it, and Soloist needs
   glibc 2.38 or newer (Debian trixie).
 - An audio output on the Home Assistant host, such as a USB DAC, HDMI or a
-  Pi's headphone jack. Pick it under **Settings → System → Hardware → Audio**,
-  or in the add-on's **Audio** section.
+  Pi's headphone jack. Pick it in the add-on's **Configuration** tab under
+  **Audio** (see [Choosing the audio output](spotify_soloist/DOCS.md#choosing-the-audio-output)).
 - A **Spotify Premium** account to create the Soloist API key. Once the
   device is set up, Free and Premium users can both play to it.
 

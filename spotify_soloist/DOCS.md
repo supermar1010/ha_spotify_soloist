@@ -20,6 +20,24 @@ machine. Soloist is subject to Spotify's terms.
 4. Optionally, install the **Spotify Soloist** integration to control the
    device from Home Assistant automations.
 
+## Choosing the audio output
+
+Soloist plays through Home Assistant's audio service (PulseAudio). To pick
+the speaker, open this add-on's **Configuration** tab, set **Output** in the
+**Audio** section to your device (for example a USB DAC or HDMI), save, and
+restart the add-on.
+
+If the list is empty or the device is missing, check what the host sees
+with the [Terminal & SSH add-on](https://github.com/home-assistant/addons/tree/master/ssh):
+
+```bash
+ha audio info                        # lists outputs and the default
+ha audio default output --name <output-name>   # sets the system default
+ha audio reload                      # after plugging in a USB DAC
+```
+
+With **Default** selected, the add-on uses the system default output.
+
 ## Options
 
 | Option | Default | Description |
@@ -45,8 +63,8 @@ replaces it right away. The log shows the installed build at every start.
 
 - **Device does not show up in Spotify:** the phone must be on the same
   network as Home Assistant, and mDNS must not be blocked between them.
-- **No sound:** check the output device in the add-on's **Audio** section
-  and under **Settings → System → Hardware**.
+- **No sound:** check the output in the add-on's **Audio** section and run
+  `ha audio info` (see [Choosing the audio output](#choosing-the-audio-output)).
 - **"Could not install Soloist":** Home Assistant cannot reach
   `soloist-builds.spotifycdn.com`. The add-on retries every 5 minutes.
 - **Wrong account / start over:** enable `reset_pairing`, restart, pair
