@@ -3,10 +3,9 @@ version: "0.1.0"
 slug: spotify_soloist
 description: Spotify Connect speaker on Home Assistant, powered by Spotify's official Soloist client
 url: https://github.com/supermar1010/ha_spotify_soloist
-# Prebuilt images from the "Publish add-on" workflow. Uncomment after the
-# first release is published and the GHCR packages are public. Until then,
-# Home Assistant builds the add-on locally from the Dockerfile.
-# image: ghcr.io/supermar1010/{arch}-addon-spotify_soloist
+# Prebuilt images from the "Publish add-on" workflow. Every version in this
+# file must be published (GitHub release v<version>) before users update.
+image: ghcr.io/supermar1010/{arch}-addon-spotify_soloist
 arch:
   - aarch64
   - amd64

@@ -218,17 +218,17 @@ the add-on for `amd64` and `aarch64`.
 
 ### Releasing
 
-Without prebuilt images, Home Assistant builds the add-on on the device
-from the `Dockerfile`. That works, but it is slow on a Raspberry Pi. To
-publish prebuilt images:
+Home Assistant pulls prebuilt images from GHCR (`image:` in
+`config.yaml`), so a version must be published before users can install
+or update to it. To release:
 
 1. Bump `version` in `spotify_soloist/config.yaml` and
    `custom_components/spotify_soloist/manifest.json`, and update both
    changelogs.
 2. Create a GitHub release with tag `v<version>`. The **Publish add-on**
    workflow pushes `ghcr.io/supermar1010/{arch}-addon-spotify_soloist`.
-3. The first time only: make both GHCR packages public (package settings →
-   visibility), then uncomment the `image:` line in `config.yaml`.
+3. The GHCR packages must be public, or Home Assistant cannot pull them
+   (package settings → visibility; set once per package).
 
 HACS installs the integration from the release tags. It needs no build.
 
