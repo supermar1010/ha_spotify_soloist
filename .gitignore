@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.ruff_cache/
+# Never commit Spotify's binary or archives: redistribution is not allowed.
+soloist
+soloist_release_*.tar.gz

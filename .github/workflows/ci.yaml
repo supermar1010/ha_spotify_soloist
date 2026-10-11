@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install ruff
+      - name: Ruff
+        run: |
+          ruff check .
+          ruff format --check .
+      - name: ShellCheck
+        run: |
+          shellcheck -x \
+            spotify_soloist/rootfs/usr/bin/soloist-supervisor \
+            spotify_soloist/rootfs/etc/s6-overlay/s6-rc.d/soloist/run \
+            spotify_soloist/rootfs/etc/s6-overlay/s6-rc.d/soloist/finish \
+            tests/addon/smoke.sh \
+            tests/addon/bashio-stub.sh
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements_test.txt
+      - run: pip install -r requirements_test.txt
+      - run: pytest -v
+
+  hassfest:
+    name: Hassfest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: home-assistant/actions/hassfest@master
+
+  hacs:
+    name: HACS validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: hacs/action@main
+        with:
+          category: integration
+          # Not submitted to home-assistant/brands yet.
+          ignore: brands
+
+  addon-lint:
+    name: Add-on lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: frenck/action-addon-linter@v2
+        with:
+          path: ./spotify_soloist
+
+  addon-build:
+    name: Add-on build (${{ matrix.arch }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            platform: linux/amd64
+          - arch: aarch64
+            platform: linux/arm64
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Read base image
+        id: base
+        run: echo "image=$(yq '.build_from.${{ matrix.arch }}' spotify_soloist/build.yaml)" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: spotify_soloist
+          platforms: ${{ matrix.platform }}
+          build-args: BUILD_FROM=${{ steps.base.outputs.image }}
+          tags: soloist-addon:ci
+          load: true
+          cache-from: type=gha,scope=${{ matrix.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
+      # Downloads Soloist from Spotify's CDN and checks that it starts.
+      - name: Smoke test
+        run: tests/addon/smoke.sh soloist-addon:ci

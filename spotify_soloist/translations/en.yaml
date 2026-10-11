@@ -1,0 +1,36 @@
+configuration:
+  device_name:
+    name: Device name
+    description: Name shown in the Spotify app's device picker.
+  api_key:
+    name: Soloist API key
+    description: >-
+      Generate it on the Spotify for Developers dashboard (Soloist API key page).
+      Needs a Spotify Premium account. Keep it secret.
+  websocket_port:
+    name: WebSocket port
+    description: >-
+      Local port for the control API. Bound to 127.0.0.1 only. Use the same
+      port in the Spotify Soloist integration.
+  initial_volume:
+    name: Initial volume
+    description: Volume (0-100) at startup. Leave empty for Soloist's default (40).
+  cache_size_mb:
+    name: Cache size (MB)
+    description: Maximum playback cache. 0 means unlimited, otherwise at least 100.
+  update_check_interval_hours:
+    name: Update check interval (hours)
+    description: How often to check Spotify's CDN for a newer Soloist build.
+  update_hour:
+    name: Update hour
+    description: >-
+      Hour of day (0-23, local time) when a downloaded update is installed.
+      Installing restarts Soloist and interrupts playback. An expired build is
+      replaced immediately.
+  reset_pairing:
+    name: Reset pairing
+    description: >-
+      Clear the stored Spotify session on start. Turn it off again afterwards.
+  verbose:
+    name: Verbose logging
+    description: Pass --verbose to Soloist.

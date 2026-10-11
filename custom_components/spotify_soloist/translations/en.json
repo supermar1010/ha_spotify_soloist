@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to Spotify Soloist",
+        "description": "Enter the address of the Soloist WebSocket API. With the Spotify Soloist add-on the defaults work.",
+        "data": {
+          "host": "Host",
+          "port": "Port"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not reach Soloist. Is the add-on running with the WebSocket API enabled?"
+    },
+    "abort": {
+      "already_configured": "This Soloist endpoint is already configured."
+    }
+  }
+}

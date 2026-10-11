@@ -1,0 +1,12 @@
+{
+  "domain": "spotify_soloist",
+  "name": "Spotify Soloist",
+  "codeowners": ["@supermar1010"],
+  "config_flow": true,
+  "documentation": "https://github.com/supermar1010/ha_spotify_soloist",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/supermar1010/ha_spotify_soloist/issues",
+  "requirements": [],
+  "version": "0.1.0"
+}

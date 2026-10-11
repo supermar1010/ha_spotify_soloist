@@ -1,0 +1,5 @@
+# Soloist needs glibc >= 2.38, so Alpine (musl, even with gcompat) and
+# Debian bookworm (glibc 2.36) do not work. Debian trixie does.
+build_from:
+  aarch64: ghcr.io/home-assistant/aarch64-base-debian:trixie
+  amd64: ghcr.io/home-assistant/amd64-base-debian:trixie
