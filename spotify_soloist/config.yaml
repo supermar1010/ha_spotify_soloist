@@ -12,7 +12,6 @@ arch:
   - amd64
 init: false
 startup: services
-boot: auto
 # Spotify Connect discovery uses mDNS, and the integration reaches the
 # WebSocket API on 127.0.0.1, so the add-on shares the host network.
 host_network: true
