@@ -54,6 +54,8 @@ jobs:
 
   hacs:
     name: HACS validation
+    # HACS cannot read file contents of private repositories.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     steps:
       - uses: hacs/action@main

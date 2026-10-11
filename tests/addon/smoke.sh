@@ -11,6 +11,14 @@ stub="$(cd "$(dirname "$0")" && pwd)/bashio-stub.sh"
 # shellcheck disable=SC2064 # expand name now
 trap "docker rm -f '${name}' >/dev/null 2>&1 || true" EXIT
 
+# The s6 service is what starts the supervisor inside Home Assistant.
+for f in run finish type; do
+    docker run --rm --entrypoint test "${image}" -f "/etc/s6-overlay/s6-rc.d/soloist/${f}" ||
+        { echo "Missing s6 service file: ${f}" >&2; exit 1; }
+done
+docker run --rm --entrypoint test "${image}" -x /etc/s6-overlay/s6-rc.d/soloist/run ||
+    { echo "s6 run script is not executable" >&2; exit 1; }
+
 docker run -d --name "${name}" -v "${stub}:/stub.sh:ro" --entrypoint bash "${image}" \
     -c 'source /stub.sh; source /usr/bin/soloist-supervisor' >/dev/null
 
