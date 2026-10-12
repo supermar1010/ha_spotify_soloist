@@ -34,6 +34,7 @@ CHECK_HOURS="$(bashio::config 'update_check_interval_hours')"
 UPDATE_HOUR="$(bashio::config 'update_hour')"
 
 soloist_pid=""
+follow_pid=""
 
 archive_url() {
     local arch
@@ -198,8 +199,46 @@ stop_soloist() {
 
 on_signal() {
     bashio::log.info "Stopping Soloist"
+    [[ -n "${follow_pid}" ]] && kill "${follow_pid}" 2>/dev/null
     stop_soloist
     exit 0
+}
+
+# ---- audio output -------------------------------------------------------------
+# Home Assistant applies the add-on's Audio output only to ALSA clients (via
+# asound.conf). Soloist talks to PulseAudio directly, so its streams are moved
+# to the selected output whenever that output exists. Forcing the output with
+# PULSE_SINK instead makes playback fail while it is missing, for example
+# while a USB DAC is switched off.
+
+move_to_output() {
+    local target="$1" sink
+    sink="$(pactl -f json list sinks 2>/dev/null |
+        jq -r --arg name "${target}" '.[] | select(.name == $name) | .index')" || return 0
+    [[ -n "${sink}" ]] || return 0
+    pactl -f json list sink-inputs 2>/dev/null |
+        jq -r --argjson sink "${sink}" '.[]
+            | select(.properties["application.process.binary"] == "soloist" and .sink != $sink)
+            | .index' |
+        while read -r input; do
+            pactl move-sink-input "${input}" "${target}" &&
+                bashio::log.info "Moved playback to ${target}"
+        done
+}
+
+follow_output() {
+    local target="$1" event
+    while true; do
+        move_to_output "${target}"
+        # Re-check whenever an output appears or a stream starts or changes.
+        while read -r event; do
+            case "${event}" in
+                *"'new' on sink #"* | *"on sink-input #"*) move_to_output "${target}" ;;
+            esac
+        done < <(pactl subscribe 2>/dev/null)
+        # pactl exits when Home Assistant's audio service restarts.
+        sleep 5
+    done
 }
 
 # ---- main ---------------------------------------------------------------------
@@ -215,18 +254,24 @@ if bashio::config.true 'verbose'; then
     EXTRA_ARGS+=(--verbose)
 fi
 
-# The Audio output picked in the UI only reaches ALSA clients via asound.conf.
-# Soloist talks to PulseAudio directly, so pass the sink on explicitly.
-audio_output="$(bashio::addon.audio_output 2>/dev/null || true)"
-if bashio::var.has_value "${audio_output}" && [[ "${audio_output}" != "null" ]]; then
-    export PULSE_SINK="${audio_output}"
-    bashio::log.info "Audio output: ${audio_output}"
+audio_output=""
+if declare -F bashio::app.audio_output >/dev/null; then
+    audio_output="$(bashio::app.audio_output 2>/dev/null || true)"
 else
-    bashio::log.info "Audio output: system default"
+    audio_output="$(bashio::addon.audio_output 2>/dev/null || true)"
 fi
+[[ "${audio_output}" == "null" ]] && audio_output=""
 
 mkdir -p "${BIN_DIR}" "${STATE_DIR}" "${CACHE_DIR}"
 trap on_signal TERM INT
+
+if [[ -n "${audio_output}" ]]; then
+    bashio::log.info "Audio output: ${audio_output}"
+    follow_output "${audio_output}" &
+    follow_pid=$!
+else
+    bashio::log.info "Audio output: system default"
+fi
 
 if bashio::config.true 'reset_pairing'; then
     bashio::log.warning "reset_pairing is on: clearing the stored Spotify session"

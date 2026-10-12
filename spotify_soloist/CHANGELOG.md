@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.1.2
+
+- Fix: playback failed and paused itself when the selected audio output was
+  missing, for example while a USB DAC is switched off. Soloist's stream now
+  moves to the selected output as soon as it appears, and back to it if it
+  disappears and returns.
+- Remove a deprecation warning from the Supervisor helper library.
+
 ## 0.1.1
 
 - Fix: play to the output selected in the add-on's **Audio** section.

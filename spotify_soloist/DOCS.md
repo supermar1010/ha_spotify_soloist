@@ -28,6 +28,11 @@ the speaker, open this add-on's **Configuration** tab, set **Output** in the
 restart the add-on. The log shows the output in use at startup
 (`Audio output: ...`).
 
+The output may come and go, for example a USB DAC that an automation switches
+on when music starts. While it is missing, Soloist plays to the system default
+output. As soon as it appears, the add-on moves playback to it and logs
+`Moved playback to ...`.
+
 If the list is empty or the device is missing, check what the host sees
 with the [Terminal & SSH add-on](https://github.com/home-assistant/addons/tree/master/ssh):
 
