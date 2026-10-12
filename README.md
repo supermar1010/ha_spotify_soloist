@@ -58,7 +58,8 @@ Spotify app ──Connect──▶ Soloist (add-on) ──audio──▶ HA host
    device in the device picker. This pairs Soloist with your account. The
    session is stored, so you only do this once.
 
-See [the add-on docs](spotify_soloist/DOCS.md) for every option.
+See [the add-on docs](spotify_soloist/DOCS.md) for every option, and the
+[changelog](spotify_soloist/CHANGELOG.md) for what changed in each release.
 
 ### 3. Install the integration (optional)
 
