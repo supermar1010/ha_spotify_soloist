@@ -25,7 +25,8 @@ machine. Soloist is subject to Spotify's terms.
 Soloist plays through Home Assistant's audio service (PulseAudio). To pick
 the speaker, open this add-on's **Configuration** tab, set **Output** in the
 **Audio** section to your device (for example a USB DAC or HDMI), save, and
-restart the add-on.
+restart the add-on. The log shows the output in use at startup
+(`Audio output: ...`).
 
 If the list is empty or the device is missing, check what the host sees
 with the [Terminal & SSH add-on](https://github.com/home-assistant/addons/tree/master/ssh):

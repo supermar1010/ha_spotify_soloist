@@ -215,6 +215,16 @@ if bashio::config.true 'verbose'; then
     EXTRA_ARGS+=(--verbose)
 fi
 
+# The Audio output picked in the UI only reaches ALSA clients via asound.conf.
+# Soloist talks to PulseAudio directly, so pass the sink on explicitly.
+audio_output="$(bashio::addon.audio_output 2>/dev/null || true)"
+if bashio::var.has_value "${audio_output}" && [[ "${audio_output}" != "null" ]]; then
+    export PULSE_SINK="${audio_output}"
+    bashio::log.info "Audio output: ${audio_output}"
+else
+    bashio::log.info "Audio output: system default"
+fi
+
 mkdir -p "${BIN_DIR}" "${STATE_DIR}" "${CACHE_DIR}"
 trap on_signal TERM INT
 
