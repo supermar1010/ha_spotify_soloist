@@ -72,6 +72,17 @@ Manual: copy `custom_components/spotify_soloist` into your
 Then go to **Settings → Devices & services → Add integration → Spotify
 Soloist**. The defaults (`127.0.0.1`, port `9090`) match the add-on.
 
+## Audio quality
+
+Soloist has no quality option, and neither does the add-on or the
+integration. Set the streaming quality in the **Spotify app**:
+
+1. Open the device picker, where you choose the Connect device.
+2. Tap the arrow next to the quality shown at the top.
+3. Pick the quality you want.
+
+Lossless (up to 24-bit/44.1 kHz) needs Premium.
+
 ## Using it in automations
 
 The entity is a standard `media_player`, so all the usual services work.
