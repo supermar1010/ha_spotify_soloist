@@ -60,7 +60,10 @@ Spotify app ──Connect──▶ Soloist (add-on) ──audio──▶ HA host
 
 See [the add-on docs](spotify_soloist/DOCS.md) for every option.
 
-### 3. Install the integration
+### 3. Install the integration (optional)
+
+The add-on alone is a working Spotify Connect speaker. The integration adds
+a `media_player` entity to control it from dashboards and automations.
 
 With [HACS](https://hacs.xyz): **HACS → ⋮ → Custom repositories**, then add
 this repository as type **Integration**, install **Spotify Soloist**, and
