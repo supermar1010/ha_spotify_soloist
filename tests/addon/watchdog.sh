@@ -4,7 +4,8 @@
 #   docker run --rm -v "$PWD:/repo:ro" debian:trixie \
 #     bash -c 'apt-get update -qq && apt-get install -y -qq jq && /repo/tests/addon/watchdog.sh'
 # Scenarios are called by name; EXTRA_ARGS is read by the sourced supervisor.
-# shellcheck disable=SC2329,SC2034
+# Older ShellCheck reports indirectly called functions as SC2317, newer as SC2329.
+# shellcheck disable=SC2317,SC2329,SC2034
 set -uo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -153,7 +154,8 @@ scenario_no_action_when_pactl_fails() {
     start_soloist
     watch_audio dac &
     sleep 9
-    ! grep -q "no audio stream" "${T}/log" && [[ ! -e "${RESTART_FLAG}" ]] || { finish; return 1; }
+    ! grep -q "no audio stream" "${T}/log" || { finish; return 1; }
+    [[ ! -e "${RESTART_FLAG}" ]] || { finish; return 1; }
     stop_soloist
     kill "$(jobs -p)" 2>/dev/null
 }
@@ -164,7 +166,8 @@ scenario_no_action_when_stream_exists() {
     start_soloist
     watch_audio dac &
     sleep 9
-    ! grep -q "no audio stream" "${T}/log" && [[ ! -e "${RESTART_FLAG}" ]] || { finish; return 1; }
+    ! grep -q "no audio stream" "${T}/log" || { finish; return 1; }
+    [[ ! -e "${RESTART_FLAG}" ]] || { finish; return 1; }
     stop_soloist
     kill "$(jobs -p)" 2>/dev/null
 }
@@ -175,7 +178,8 @@ scenario_no_action_when_not_playing() {
     start_soloist
     watch_audio dac &
     sleep 9
-    ! grep -q "no audio stream" "${T}/log" && [[ ! -e "${RESTART_FLAG}" ]] || { finish; return 1; }
+    ! grep -q "no audio stream" "${T}/log" || { finish; return 1; }
+    [[ ! -e "${RESTART_FLAG}" ]] || { finish; return 1; }
     stop_soloist
     kill "$(jobs -p)" 2>/dev/null
 }
