@@ -33,6 +33,20 @@ on when music starts. While it is missing, Soloist plays to the system default
 output. As soon as it appears, the add-on moves playback to it and logs
 `Moved playback to ...`.
 
+The log also shows `Output ... appeared` / `disappeared`. If Soloist reports
+playing but has no audio stream for 20 seconds (for example after Home
+Assistant's audio service restarted), the add-on logs a warning with a short
+`Audio (...)` snapshot (outputs with state, mute and volume, and Soloist's
+stream). After 60 seconds it restarts Soloist as a last resort; press play
+again in Spotify.
+
+With `verbose` on, such snapshots are also logged when playback starts or
+moves and when an output appears or disappears. They report whether audio
+actually reaches the output (`signal=audio` or `signal=silent`) and the
+stream latency, and are repeated 15 seconds after playback starts or moves and
+every 5 minutes while playing. Turn `verbose` on while tracking down a
+no-sound problem, and include the snapshots when reporting it.
+
 If the list is empty or the device is missing, check what the host sees
 with the [Terminal & SSH add-on](https://github.com/home-assistant/addons/tree/master/ssh):
 

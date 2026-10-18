@@ -27,14 +27,42 @@ readonly EXIT_EXPIRED=10
 readonly LIFETIME_DAYS=90
 readonly WARN_DAYS=14
 
+# Soloist's playback state, tracked from its own log output (see
+# track_soloist_output), and the request for a last-resort restart.
+# Timings are in seconds; the environment overrides them for tests.
+readonly RUN_DIR="${SOLOIST_RUN_DIR:-/run/soloist}"
+readonly PLAY_STATE="${RUN_DIR}/state"
+readonly RESTART_FLAG="${RUN_DIR}/restart"
+readonly POLL_SECS="${SOLOIST_POLL_SECS:-10}"
+readonly WATCH_SECS="${SOLOIST_WATCH_SECS:-10}"
+readonly FRESH_SECS="${SOLOIST_FRESH_SECS:-30}"
+readonly WARN_AFTER_SECS="${SOLOIST_WARN_AFTER_SECS:-20}"
+readonly RESTART_AFTER_SECS="${SOLOIST_RESTART_AFTER_SECS:-60}"
+readonly COOLDOWN_SECS="${SOLOIST_COOLDOWN_SECS:-600}"
+# Extra audio diagnostics, only with the verbose option: a follow-up snapshot
+# after playback starts or moves, and one every PERIODIC_SECS while playing.
+readonly FOLLOWUP_SECS="${SOLOIST_FOLLOWUP_SECS:-15}"
+readonly PERIODIC_SECS="${SOLOIST_PERIODIC_SECS:-300}"
+readonly FOLLOWUP_FILE="${RUN_DIR}/followup"
+
 DEVICE_NAME="$(bashio::config 'device_name')"
 API_KEY="$(bashio::config 'api_key')"
 WS_PORT="$(bashio::config 'websocket_port')"
 CHECK_HOURS="$(bashio::config 'update_check_interval_hours')"
 UPDATE_HOUR="$(bashio::config 'update_hour')"
+# "true" or "false"; the environment overrides the option for tests.
+VERBOSE="${SOLOIST_VERBOSE:-$(bashio::config.true 'verbose' && echo true || echo false)}"
 
 soloist_pid=""
 follow_pid=""
+
+# Watcher state (lives in the background watcher only).
+output_present=""
+stall_since=0
+stall_warned=false
+stall_restarted=false
+last_restart=0
+last_periodic=0
 
 archive_url() {
     local arch
@@ -176,16 +204,51 @@ install_now() {
     echo "${remote}" >"${META}"
 }
 
+# Records "<playing|idle> <unix time>" in $PLAY_STATE.
+set_play_state() {
+    printf '%s %s\n' "$1" "$(date +%s)" >"${PLAY_STATE}.tmp" &&
+        mv -f "${PLAY_STATE}.tmp" "${PLAY_STATE}"
+}
+
+# Reads Soloist's output: passes every line on to the log unchanged and
+# records whether it is playing. Soloist repeats "playing" every 10 s.
+track_soloist_output() {
+    local line msg playing=false
+    while IFS= read -r line || [[ -n "${line}" ]]; do
+        echo "${line}"
+        # Lines look like "2026-10-18 16:37:22.049: playing spotify:track:...".
+        msg="${line#*: }"
+        case "${msg}" in
+            "playing "*)
+                set_play_state playing
+                if [[ "${playing}" == false ]]; then
+                    playing=true
+                    # In the background: probing the signal takes a second,
+                    # and Soloist must never wait on its own log.
+                    routine_snapshot "Soloist started playing" &
+                fi
+                ;;
+            "paused "* | stopped*)
+                playing=false
+                set_play_state idle
+                ;;
+        esac
+    done
+}
+
 start_soloist() {
     bashio::log.info "$("${BIN}" --version 2>&1)"
     log_expiry
+    mkdir -p "${RUN_DIR}"
+    set_play_state idle
+    # Process substitution keeps $! the pid of Soloist itself.
     "${BIN}" \
         --device-name "${DEVICE_NAME}" \
         --api-key "${API_KEY}" \
         --data-dir "${STATE_DIR}" \
         --cache-dir "${CACHE_DIR}" \
         --ws "127.0.0.1:${WS_PORT}" \
-        "${EXTRA_ARGS[@]}" &
+        "${EXTRA_ARGS[@]}" > >(track_soloist_output) 2>&1 &
     soloist_pid=$!
     bashio::log.info "Soloist started as \"${DEVICE_NAME}\" (WebSocket on 127.0.0.1:${WS_PORT})"
 }
@@ -211,6 +274,82 @@ on_signal() {
 # PULSE_SINK instead makes playback fail while it is missing, for example
 # while a USB DAC is switched off.
 
+# Records the 1 s of audio on sink monitor $1 and prints signal=audio,
+# signal=silent, or signal=? if nothing could be recorded. Bounded by timeout.
+probe_signal() {
+    local tmp
+    tmp="$(mktemp)" || { echo "signal=?"; return 0; }
+    timeout 3 parec --raw -d "$1" --format=s16le --rate=44100 --channels=2 2>/dev/null |
+        head -c 176400 >"${tmp}"
+    if [[ ! -s "${tmp}" ]]; then
+        echo "signal=?"
+    elif [[ -n "$(tr -d '\0' <"${tmp}" | head -c 1)" ]]; then
+        echo "signal=audio"
+    else
+        echo "signal=silent"
+    fi
+    rm -f "${tmp}"
+}
+
+# The snapshots at routine events (playback starts or moves, an output
+# appears or disappears) are only logged with verbose. The watchdog's own
+# snapshot is always logged.
+routine_snapshot() {
+    [[ "${VERBOSE}" == true ]] && log_audio_snapshot "$1"
+    return 0
+}
+
+# Logs a compact picture of the audio state, to help find out why a stream
+# plays without sound: every sink, the default sink and Soloist's streams.
+# With verbose, also the streams' latency and whether any sound reaches
+# their sink, and a follow-up snapshot is scheduled after start and move.
+log_audio_snapshot() {
+    local why="$1" sinks inputs default line extra="{}" index monitor
+    if ! sinks="$(pactl -f json list sinks 2>/dev/null)" ||
+        ! inputs="$(pactl -f json list sink-inputs 2>/dev/null)"; then
+        bashio::log.info "Audio (${why}): audio service not reachable"
+        return 0
+    fi
+    if [[ "${VERBOSE}" == true ]]; then
+        case "${why}" in
+            "Soloist started playing" | "after move")
+                echo "$(($(date +%s) + FOLLOWUP_SECS)) ${why}" >"${FOLLOWUP_FILE}"
+                ;;
+        esac
+        # Streams that are not corked, with the monitor of their sink.
+        while IFS=$'\t' read -r index monitor; do
+            [[ -n "${monitor}" ]] || continue
+            extra="$(jq -c --arg k "${index}" --arg v " $(probe_signal "${monitor}")" \
+                '. + {($k): $v}' <<<"${extra}")"
+        done < <(jq -r --argjson inputs "${inputs}" '
+            (map({key: (.index | tostring), value: .monitor_source}) | from_entries) as $mon
+            | $inputs[] | select(.properties["application.process.binary"] == "soloist"
+                and .corked == false)
+            | "\(.index)\t\($mon[.sink | tostring] // "")"' <<<"${sinks}" 2>/dev/null)
+    fi
+    default="$(pactl -f json info 2>/dev/null | jq -r '.default_sink_name // "?"')" || default="?"
+    bashio::log.info "Audio (${why}): default sink ${default}"
+    jq -r --argjson inputs "${inputs}" --argjson extra "${extra}" \
+        --argjson verbose "${VERBOSE}" '
+        def f: if . == null then "?" else . end;
+        def vol: [(.volume // {})[]? | (.value_percent? | f)] | unique | join(",");
+        (map({key: (.index | tostring), value: .name}) | from_entries) as $names
+        | (.[] | "  sink \(.name) (#\(.index)) state=\(.state | f)"
+            + " mute=\(.mute | f) volume=\(vol) latency=\(.latency.actual? | f)us"),
+          ([$inputs[] | select(.properties["application.process.binary"] == "soloist")] as $own
+            | if ($own | length) == 0 then "  no Soloist stream"
+              else $own[] | "  Soloist stream #\(.index) on \($names[.sink | tostring] // "?")"
+                + " corked=\(.corked | f) mute=\(.mute | f) volume=\(vol)"
+                + (if $verbose
+                    then " sink_latency=\(.sink_latency_usec | f)us buffer_latency=\(.buffer_latency_usec | f)us"
+                        + ($extra[.index | tostring] // "")
+                    else "" end) end)
+        ' <<<"${sinks}" 2>/dev/null |
+        while read -r line; do
+            bashio::log.info "${line}"
+        done
+}
+
 move_to_output() {
     local target="$1" sink
     sink="$(pactl -f json list sinks 2>/dev/null |
@@ -221,29 +360,123 @@ move_to_output() {
             | select(.properties["application.process.binary"] == "soloist" and .sink != $sink)
             | .index' |
         while read -r input; do
-            pactl move-sink-input "${input}" "${target}" &&
+            if pactl move-sink-input "${input}" "${target}"; then
                 bashio::log.info "Moved playback to ${target}"
+                routine_snapshot "after move"
+            else
+                bashio::log.warning "Could not move stream ${input} to ${target}"
+            fi
         done
 }
 
-follow_output() {
+# Soloist keeps logging "playing" if it loses its PulseAudio connection (for
+# example when Home Assistant's audio service restarts), but has no stream
+# then. $1 is the sink-input JSON. If this persists, warn first, and restart
+# Soloist as a last resort (the main loop does it, once per occurrence).
+check_stream() {
+    local state="" stamp=0 now
+    now="$(date +%s)"
+    [[ -r "${PLAY_STATE}" ]] && read -r state stamp <"${PLAY_STATE}"
+    if [[ "${state}" != playing ]] || ((now - ${stamp:-0} > FRESH_SECS)) ||
+        jq -e 'any(.[]; .properties["application.process.binary"] == "soloist")' \
+            >/dev/null <<<"$1"; then
+        stall_since=0
+        stall_warned=false
+        stall_restarted=false
+        return 0
+    fi
+    ((stall_since > 0)) || stall_since="${now}"
+    if [[ "${stall_warned}" == false ]] && ((now - stall_since >= WARN_AFTER_SECS)); then
+        stall_warned=true
+        bashio::log.warning "Soloist reports playing but has no audio stream; Home Assistant's audio service may have restarted"
+        log_audio_snapshot "no Soloist stream"
+    fi
+    if [[ "${stall_restarted}" == false ]] && ((now - stall_since >= RESTART_AFTER_SECS)) &&
+        ((now - last_restart >= COOLDOWN_SECS)); then
+        stall_restarted=true
+        last_restart="${now}"
+        : >"${RESTART_FLAG}"
+        bashio::log.warning "Soloist still has no audio stream after ${RESTART_AFTER_SECS} s; restarting it as a last resort. Spotify may need you to press play again."
+    fi
+}
+
+# Verbose only. Logs the follow-up snapshot once it is due, and one every
+# PERIODIC_SECS while Soloist is playing.
+check_snapshots() {
+    [[ "${VERBOSE}" == true ]] || return 0
+    local state="" stamp=0 now due="" why=""
+    now="$(date +%s)"
+    if [[ -r "${FOLLOWUP_FILE}" ]]; then
+        read -r due why <"${FOLLOWUP_FILE}"
+        if ((now >= ${due:-0})); then
+            rm -f "${FOLLOWUP_FILE}"
+            log_audio_snapshot "${FOLLOWUP_SECS} s after ${why#after }"
+        fi
+    fi
+    [[ -r "${PLAY_STATE}" ]] && read -r state stamp <"${PLAY_STATE}"
+    if [[ "${state}" != playing ]] || ((now - ${stamp:-0} > FRESH_SECS)); then
+        last_periodic=0
+    elif ((last_periodic == 0)); then
+        last_periodic="${now}"
+    elif ((now - last_periodic >= PERIODIC_SECS)); then
+        last_periodic="${now}"
+        log_audio_snapshot "while playing"
+    fi
+}
+
+# One health check. $1 is the selected output, empty for the system default.
+check_audio() {
+    local target="$1" sinks inputs present=false
+    # If pactl fails, the audio service is down or restarting: do nothing
+    # until it answers again.
+    if ! sinks="$(pactl -f json list sinks 2>/dev/null)" ||
+        ! inputs="$(pactl -f json list sink-inputs 2>/dev/null)" ||
+        ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"${sinks}" ||
+        ! jq -e 'type == "array"' >/dev/null 2>&1 <<<"${inputs}"; then
+        stall_since=0
+        return 0
+    fi
+    if [[ -n "${target}" ]]; then
+        jq -e --arg name "${target}" 'any(.[]; .name == $name)' \
+            >/dev/null <<<"${sinks}" && present=true
+        if [[ "${present}" != "${output_present}" ]]; then
+            if [[ "${output_present}" == true ]]; then
+                bashio::log.info "Output ${target} disappeared"
+                routine_snapshot "output gone"
+            elif [[ "${output_present}" == false ]]; then
+                bashio::log.info "Output ${target} appeared"
+                routine_snapshot "output back"
+            fi
+            output_present="${present}"
+        fi
+        move_to_output "${target}"
+    fi
+    check_stream "${inputs}"
+    check_snapshots
+}
+
+# Runs in the background for the add-on's lifetime. $1 is the selected
+# output; if empty, it only watches Soloist's stream and moves nothing.
+watch_audio() {
     local target="$1" event rc
     while true; do
-        move_to_output "${target}"
+        check_audio "${target}"
         # Re-check whenever an output appears or a stream starts or changes.
         # pactl block-buffers its output into a pipe, delaying events by
         # minutes, so force line buffering. The read timeout re-checks anyway
         # in case an event is still missed.
         while true; do
             rc=0
-            read -r -t 10 event || rc=$?
+            read -r -t "${WATCH_SECS}" event || rc=$?
             if ((rc > 128)); then
-                move_to_output "${target}"
+                check_audio "${target}"
             elif ((rc != 0)); then
                 break
             else
                 case "${event}" in
-                    *"'new' on sink #"* | *"on sink-input #"*) move_to_output "${target}" ;;
+                    *"'new' on sink #"* | *"'remove' on sink #"* | *"on sink-input #"*)
+                        check_audio "${target}"
+                        ;;
                 esac
             fi
         done < <(stdbuf -oL pactl subscribe 2>/dev/null)
@@ -251,6 +484,9 @@ follow_output() {
         sleep 5
     done
 }
+
+# Lets the test suite source the functions above without running Soloist.
+[[ -n "${SOLOIST_SOURCE_ONLY:-}" ]] && return 0
 
 # ---- main ---------------------------------------------------------------------
 
@@ -261,7 +497,7 @@ fi
 if bashio::config.has_value 'cache_size_mb'; then
     EXTRA_ARGS+=(--cache-size "$(bashio::config 'cache_size_mb')")
 fi
-if bashio::config.true 'verbose'; then
+if [[ "${VERBOSE}" == true ]]; then
     EXTRA_ARGS+=(--verbose)
 fi
 
@@ -278,11 +514,11 @@ trap on_signal TERM INT
 
 if [[ -n "${audio_output}" ]]; then
     bashio::log.info "Audio output: ${audio_output}"
-    follow_output "${audio_output}" &
-    follow_pid=$!
 else
     bashio::log.info "Audio output: system default"
 fi
+watch_audio "${audio_output}" &
+follow_pid=$!
 
 if bashio::config.true 'reset_pairing'; then
     bashio::log.warning "reset_pairing is on: clearing the stored Spotify session"
@@ -302,13 +538,14 @@ start_soloist
 
 while true; do
     # Sleep in short steps so signals and exits are handled promptly.
-    sleep 30 &
+    sleep "${POLL_SECS}" &
     wait $! || true
 
     if ! kill -0 "${soloist_pid}" 2>/dev/null; then
         rc=0
         wait "${soloist_pid}" || rc=$?
         soloist_pid=""
+        rm -f "${RESTART_FLAG}"
         if ((rc == EXIT_EXPIRED)); then
             bashio::log.warning "Soloist build expired; fetching a new one"
             until install_now; do
@@ -323,6 +560,14 @@ while true; do
             # A pending update is a good fix for a crashing build.
             apply_staged || true
         fi
+        start_soloist
+        continue
+    fi
+
+    if [[ -f "${RESTART_FLAG}" ]]; then
+        rm -f "${RESTART_FLAG}"
+        bashio::log.info "Restarting Soloist to reconnect to the audio service"
+        stop_soloist
         start_soloist
         continue
     fi

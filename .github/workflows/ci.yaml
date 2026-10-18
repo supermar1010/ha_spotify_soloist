@@ -30,7 +30,17 @@ jobs:
             spotify_soloist/rootfs/etc/s6-overlay/s6-rc.d/soloist/run \
             spotify_soloist/rootfs/etc/s6-overlay/s6-rc.d/soloist/finish \
             tests/addon/smoke.sh \
+            tests/addon/watchdog.sh \
             tests/addon/bashio-stub.sh
+
+  addon-logic:
+    name: Add-on audio logic
+    runs-on: ubuntu-latest
+    container: debian:trixie
+    steps:
+      - run: apt-get update && apt-get install -y jq
+      - uses: actions/checkout@v4
+      - run: tests/addon/watchdog.sh
 
   test:
     name: Unit tests

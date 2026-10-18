@@ -33,4 +33,6 @@ configuration:
       Clear the stored Spotify session on start. Turn it off again afterwards.
   verbose:
     name: Verbose logging
-    description: Pass --verbose to Soloist.
+    description: >-
+      Pass --verbose to Soloist and log extra audio diagnostics (whether
+      sound reaches the output, stream latency, repeated snapshots).
