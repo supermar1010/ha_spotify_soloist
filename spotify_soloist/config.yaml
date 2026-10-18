@@ -1,5 +1,5 @@
 name: Spotify Soloist
-version: "0.1.2"
+version: "0.1.3"
 slug: spotify_soloist
 description: Spotify Connect speaker on Home Assistant, powered by Spotify's official Soloist client
 url: https://github.com/supermar1010/ha_spotify_soloist

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Fix: sometimes no sound for minutes after starting playback, until the
+  stream suddenly moved to the selected audio output. The add-on now notices
+  new streams right away and re-checks every 10 seconds.
+
 ## 0.1.2
 
 - Fix: playback failed and paused itself when the selected audio output was

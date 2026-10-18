@@ -227,15 +227,26 @@ move_to_output() {
 }
 
 follow_output() {
-    local target="$1" event
+    local target="$1" event rc
     while true; do
         move_to_output "${target}"
         # Re-check whenever an output appears or a stream starts or changes.
-        while read -r event; do
-            case "${event}" in
-                *"'new' on sink #"* | *"on sink-input #"*) move_to_output "${target}" ;;
-            esac
-        done < <(pactl subscribe 2>/dev/null)
+        # pactl block-buffers its output into a pipe, delaying events by
+        # minutes, so force line buffering. The read timeout re-checks anyway
+        # in case an event is still missed.
+        while true; do
+            rc=0
+            read -r -t 10 event || rc=$?
+            if ((rc > 128)); then
+                move_to_output "${target}"
+            elif ((rc != 0)); then
+                break
+            else
+                case "${event}" in
+                    *"'new' on sink #"* | *"on sink-input #"*) move_to_output "${target}" ;;
+                esac
+            fi
+        done < <(stdbuf -oL pactl subscribe 2>/dev/null)
         # pactl exits when Home Assistant's audio service restarts.
         sleep 5
     done
